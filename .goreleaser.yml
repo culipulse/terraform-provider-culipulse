@@ -1,0 +1,70 @@
+# GoReleaser config for terraform-provider-culipulse.
+#
+# Based on hashicorp/terraform-provider-scaffolding-framework .goreleaser.yml
+# (commit ce6992fa2f5135a5f7071b9690f18a5352e40fb3, 2026-09-07). Differences, on purpose:
+#   - project_name is fixed: the Terraform Registry requires assets named
+#     terraform-provider-culipulse_<version>_<os>_<arch>.zip, and the default project name comes
+#     from the git remote, which is "culipulse" when built from the monorepo.
+#   - no `before: go mod tidy` hook: the release builds exactly what was committed.
+#   - ldflags set only main.version (main.go has no `commit` variable).
+#   - release.prerelease: auto, so a vX.Y.Z-rcN tag becomes a GitHub pre-release.
+version: 2
+project_name: terraform-provider-culipulse
+builds:
+  - env:
+      - CGO_ENABLED=0
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
+    ldflags:
+      - "-s -w -X main.version={{ .Version }}"
+    goos:
+      - freebsd
+      - windows
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - "386"
+      - arm
+      - arm64
+      - s390x
+    ignore:
+      - goos: darwin
+        goarch: "386"
+      - goos: darwin
+        goarch: s390x
+      - goos: freebsd
+        goarch: s390x
+      - goos: windows
+        goarch: arm
+      - goos: windows
+        goarch: s390x
+    binary: "{{ .ProjectName }}_v{{ .Version }}"
+archives:
+  - formats:
+      - zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+checksum:
+  extra_files:
+    - glob: "terraform-registry-manifest.json"
+      name_template: "{{ .ProjectName }}_{{ .Version }}_manifest.json"
+  name_template: "{{ .ProjectName }}_{{ .Version }}_SHA256SUMS"
+  algorithm: sha256
+signs:
+  - artifacts: checksum
+    args:
+      - "--batch"
+      - "--local-user"
+      - "{{ .Env.GPG_FINGERPRINT }}"
+      - "--output"
+      - "${signature}"
+      - "--detach-sign"
+      - "${artifact}"
+release:
+  prerelease: auto
+  extra_files:
+    - glob: "terraform-registry-manifest.json"
+      name_template: "{{ .ProjectName }}_{{ .Version }}_manifest.json"
+changelog:
+  disable: true
