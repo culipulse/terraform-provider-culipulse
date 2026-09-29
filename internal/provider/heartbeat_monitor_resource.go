@@ -41,8 +41,8 @@ type heartbeatMonitorModel struct {
 func NewHeartbeatMonitorResource() resource.Resource { return &heartbeatMonitorResource{} }
 
 // heartbeatMonitorWrite never sends check_spec, agent_sources or down_min_sources: a
-// heartbeat has no request settings and no agents/quorum, and the server keeps the ping
-// token on PATCH regardless (monitor-service.ts:636-643).
+// heartbeat has no request settings and no agents/quorum. On a PATCH without check_spec the
+// server keeps the ping token and the stored heartbeat settings (updateMonitor's heartbeat branch).
 func heartbeatMonitorWrite(m heartbeatMonitorModel, create bool) *client.MonitorWrite {
 	w := &client.MonitorWrite{
 		Name:              m.Name.ValueString(),
@@ -98,7 +98,7 @@ func (r *heartbeatMonitorResource) Schema(_ context.Context, _ resource.SchemaRe
 	resp.Schema = schema.Schema{
 		Description: "A dead man's switch for cron jobs, backups and other scheduled work: your job calls `ping_url` " +
 			"when it finishes, and CuliPulse alerts when the call doesn't arrive on time. Heartbeat settings made " +
-			"in the console that this resource doesn't manage (such as a maximum run time) are reset on the next update.",
+			"in the console that this resource doesn't manage (such as a maximum run time) are kept on update.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{Computed: true, Description: "Monitor id.", PlanModifiers: keepStr},
 			"name": schema.StringAttribute{Required: true, Description: "Name shown in the console and in alerts.",

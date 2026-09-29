@@ -126,18 +126,34 @@ func TestHeartbeatTokenSurvivesPatch(t *testing.T) {
 	}
 }
 
-func TestPatchTypeChangeRejectedSameTypeAllowed(t *testing.T) {
+// Mirrors PATCH /v1/monitors/{id} (src/public-api.ts): read-only fields are a 400 whatever their
+// value — including a `type` equal to the stored one — so any provider change that starts sending
+// one fails here instead of in a user's apply.
+func TestPatchRejectsReadOnlyFields(t *testing.T) {
 	s := New(t)
 	id := s.SeedMonitor("http", "a")
-	body := func(typ string) *client.MonitorWrite {
-		return &client.MonitorWrite{Name: "a", Type: typ, IntervalSeconds: 300}
-	}
 	c := newClient(t, s)
-	if err := c.UpdateMonitor(context.Background(), id, body("heartbeat")); err == nil {
-		t.Fatal("type change accepted")
+	for _, typ := range []string{"http", "heartbeat"} {
+		if err := c.UpdateMonitor(context.Background(), id, &client.MonitorWrite{Name: "a", Type: typ, IntervalSeconds: 300}); err == nil {
+			t.Fatalf("PATCH with type %q accepted", typ)
+		}
 	}
-	if err := c.UpdateMonitor(context.Background(), id, body("http")); err != nil {
-		t.Fatalf("same-type PATCH rejected: %v", err)
+	for _, k := range []string{"enabled", "status", "heartbeat_grace_seconds", "id", "created_at", "updated_at"} {
+		req, _ := http.NewRequest(http.MethodPatch, s.URL()+"/v1/monitors/"+id,
+			bytes.NewBufferString(`{"name":"a","interval_seconds":300,"`+k+`":1}`))
+		req.Header.Set("Authorization", "Bearer "+Token)
+		req.Header.Set("Content-Type", "application/json")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != http.StatusBadRequest {
+			t.Fatalf("%s: got %d, want 400", k, res.StatusCode)
+		}
+	}
+	if err := c.UpdateMonitor(context.Background(), id, &client.MonitorWrite{Name: "a", IntervalSeconds: 300}); err != nil {
+		t.Fatalf("PATCH without read-only fields rejected: %v", err)
 	}
 }
 

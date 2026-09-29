@@ -373,7 +373,10 @@ func accWebhookURL() string {
 	if u := os.Getenv("CULIPULSE_ACC_WEBHOOK_URL"); u != "" {
 		return u
 	}
-	return "https://httpbin.org/post"
+	// Not httpbin.org: on 2026-09-24 it failed ~37% of the server's test deliveries from
+	// Cloudflare's egress (3/8 measured through staging), which made this test flaky.
+	// postman-echo answered 10/10 from the same path.
+	return "https://postman-echo.com/post"
 }
 
 func TestAccWebhookChannelAndRouting(t *testing.T) {

@@ -3,12 +3,12 @@
 page_title: "culipulse_heartbeat_monitor Resource - culipulse"
 subcategory: ""
 description: |-
-  A dead man's switch for cron jobs, backups and other scheduled work: your job calls ping_url when it finishes, and CuliPulse alerts when the call doesn't arrive on time. Heartbeat settings made in the console that this resource doesn't manage (such as a maximum run time) are reset on the next update.
+  A dead man's switch for cron jobs, backups and other scheduled work: your job calls ping_url when it finishes, and CuliPulse alerts when the call doesn't arrive on time. Heartbeat settings made in the console that this resource doesn't manage (such as a maximum run time) are kept on update.
 ---
 
 # culipulse_heartbeat_monitor (Resource)
 
-A dead man's switch for cron jobs, backups and other scheduled work: your job calls `ping_url` when it finishes, and CuliPulse alerts when the call doesn't arrive on time. Heartbeat settings made in the console that this resource doesn't manage (such as a maximum run time) are reset on the next update.
+A dead man's switch for cron jobs, backups and other scheduled work: your job calls `ping_url` when it finishes, and CuliPulse alerts when the call doesn't arrive on time. Heartbeat settings made in the console that this resource doesn't manage (such as a maximum run time) are kept on update.
 
 ## Example Usage
 

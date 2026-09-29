@@ -357,6 +357,10 @@ func (s *Server) deleteMonitor(id string) {
 	}
 }
 
+// readOnlyMonitorFields mirrors MONITOR_PATCH_READ_ONLY in src/lib/public-api-schemas.ts: the real
+// PATCH /v1/monitors/{id} answers 400 when the body has any of them, whatever the value.
+var readOnlyMonitorFields = []string{"enabled", "status", "heartbeat_grace_seconds", "type", "id", "created_at", "updated_at"}
+
 func (s *Server) patchMonitor(w http.ResponseWriter, sm *storedMonitor, body []byte) {
 	var raw map[string]json.RawMessage
 	var in client.MonitorWrite
@@ -367,9 +371,11 @@ func (s *Server) patchMonitor(w http.ResponseWriter, sm *storedMonitor, body []b
 	has := func(k string) bool { _, ok := raw[k]; return ok }
 	next := *sm // validate everything before mutating
 	m := &next.m
-	if has("type") && in.Type != m.Type {
-		writeErr(w, http.StatusBadRequest, "type cannot be changed; delete and recreate the monitor")
-		return
+	for _, k := range readOnlyMonitorFields {
+		if has(k) {
+			writeErr(w, http.StatusBadRequest, k+" is read-only and can't be changed with PATCH")
+			return
+		}
 	}
 	if has("name") {
 		m.Name = in.Name
