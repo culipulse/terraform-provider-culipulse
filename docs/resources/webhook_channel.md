@@ -3,12 +3,12 @@
 page_title: "culipulse_webhook_channel Resource - culipulse"
 subcategory: ""
 description: |-
-  Sends alerts as signed JSON POST requests to your own endpoint. Which monitors alert here is set with culipulse_channel_routing; a new channel receives alerts for every monitor until you route it.
+  Sends alerts as signed JSON POST requests to your own endpoint. Which monitors alert here is set with culipulse_channel_routing; a new channel receives alerts for every monitor until you route it. An account can have up to 20 notification destinations of all types; creating more fails with an error saying so. A URL that another webhook channel in the account already uses is rejected, so edit or route that channel instead of adding a second one.
 ---
 
 # culipulse_webhook_channel (Resource)
 
-Sends alerts as signed JSON POST requests to your own endpoint. Which monitors alert here is set with `culipulse_channel_routing`; a new channel receives alerts for every monitor until you route it.
+Sends alerts as signed JSON POST requests to your own endpoint. Which monitors alert here is set with `culipulse_channel_routing`; a new channel receives alerts for every monitor until you route it. An account can have up to 20 notification destinations of all types; creating more fails with an error saying so. A URL that another webhook channel in the account already uses is rejected, so edit or route that channel instead of adding a second one.
 
 ## Example Usage
 

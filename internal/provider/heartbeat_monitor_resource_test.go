@@ -137,3 +137,31 @@ func TestHeartbeatMonitor_statusChangeDuringUpdateIsNotAnError(t *testing.T) {
 		},
 	})
 }
+
+// A read-scope API token no longer receives check_spec.heartbeat.token (issue #400). A refresh or
+// read-only `terraform plan` made with such a token must keep the ping_url already in state, and
+// must not turn it into an error or a diff.
+func TestApplyHeartbeatMonitor_tokenlessReadKeepsStatePingURL(t *testing.T) {
+	grace := int64(60)
+	api := &client.Monitor{ID: "mon_1", Type: "heartbeat", Name: "hb", IntervalSeconds: 300, HeartbeatGraceSeconds: &grace,
+		DownAfterFailures: 1, Status: "up", CheckSpec: &client.CheckSpec{Heartbeat: &client.HeartbeatSpec{}}}
+	m := heartbeatMonitorModel{PingURL: types.StringValue("https://culipulse.dev/ping/mon_1.secret")}
+	if d := applyHeartbeatMonitor(api, "https://culipulse.dev", &m); d.HasError() {
+		t.Fatalf("unexpected error: %v", d)
+	}
+	if got := m.PingURL.ValueString(); got != "https://culipulse.dev/ping/mon_1.secret" {
+		t.Errorf("ping_url = %q, want the state value kept", got)
+	}
+	// With nothing in state yet (unknown), the value settles to null rather than staying unknown.
+	m = heartbeatMonitorModel{PingURL: types.StringUnknown()}
+	_ = applyHeartbeatMonitor(api, "https://culipulse.dev", &m)
+	if !m.PingURL.IsNull() {
+		t.Errorf("ping_url = %v, want null", m.PingURL)
+	}
+	// A write token still gets the token, so ping_url is (re)built.
+	api.CheckSpec.Heartbeat.Token = "mon_1.fresh"
+	_ = applyHeartbeatMonitor(api, "https://culipulse.dev", &m)
+	if got := m.PingURL.ValueString(); got != "https://culipulse.dev/ping/mon_1.fresh" {
+		t.Errorf("ping_url = %q", got)
+	}
+}

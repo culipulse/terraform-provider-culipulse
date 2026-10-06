@@ -64,9 +64,28 @@ type HeartbeatSpec struct {
 	Token string `json:"token,omitempty"`
 }
 
+// Warning is an entry of the optional `warnings` array on a monitor create/update response: the
+// save worked, but something will not behave as the user might expect (for example
+// `own_agent_no_secrets`). Unknown codes may appear in later API versions, so show Message.
+type Warning struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// MonitorMutationResult is the body of POST /v1/monitors and PATCH /v1/monitors/{id}.
+type MonitorMutationResult struct {
+	ID       string    `json:"id"`
+	Status   string    `json:"status"`
+	Warnings []Warning `json:"warnings,omitempty"`
+}
+
 // MonitorWrite is the body of POST /v1/monitors and PATCH /v1/monitors/{id}.
-// nil pointers are omitted. On PATCH an omitted field keeps its value EXCEPT check_spec and
-// down_min_sources (see the Global Constraints). sla_target has no omitempty: null clears it.
+// nil pointers are omitted. On PATCH an omitted field keeps its value EXCEPT down_min_sources, and
+// check_spec on http monitors (omitting it clears the whole object there; heartbeat, tcp, udp and
+// icmp keep a stored check_spec when it is omitted). A future tcp/udp/icmp resource must therefore
+// ALWAYS send check_spec, even `{}`, the way the http resource does: otherwise removing a field from
+// HCL leaves it stored on the server and the plan drifts permanently.
+// sla_target has no omitempty: null clears it.
 type MonitorWrite struct {
 	Name              string     `json:"name"`
 	Type              string     `json:"type,omitempty"` // create only

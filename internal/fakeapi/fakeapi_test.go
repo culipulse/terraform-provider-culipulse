@@ -27,7 +27,7 @@ func TestPatchWithoutCheckSpecWipesHTTPRequest(t *testing.T) {
 	s := New(t)
 	c := newClient(t, s)
 	ctx := context.Background()
-	id, err := c.CreateMonitor(ctx, &client.MonitorWrite{
+	id, _, err := c.CreateMonitor(ctx, &client.MonitorWrite{
 		Name: "a", Type: "http", Target: strp("https://e.com"), IntervalSeconds: 300,
 		AgentSources: []string{"agt_sg"},
 		CheckSpec: &client.CheckSpec{Request: &client.RequestSpec{
@@ -38,7 +38,7 @@ func TestPatchWithoutCheckSpecWipesHTTPRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.UpdateMonitor(ctx, id, &client.MonitorWrite{Name: "a2", IntervalSeconds: 300}); err != nil {
+	if _, err := c.UpdateMonitor(ctx, id, &client.MonitorWrite{Name: "a2", IntervalSeconds: 300}); err != nil {
 		t.Fatal(err)
 	}
 	if cs := s.StoredCheckSpec("a2"); cs.Request != nil {
@@ -50,7 +50,7 @@ func TestReadRedactsSecretsAndDefaults(t *testing.T) {
 	s := New(t)
 	c := newClient(t, s)
 	ctx := context.Background()
-	id, _ := c.CreateMonitor(ctx, &client.MonitorWrite{
+	id, _, _ := c.CreateMonitor(ctx, &client.MonitorWrite{
 		Name: "a", Type: "http", Target: strp("https://e.com"), IntervalSeconds: 300,
 		AgentSources: []string{"agt_sg", "agt_eu"},
 		CheckSpec: &client.CheckSpec{Request: &client.RequestSpec{
@@ -77,7 +77,7 @@ func TestReadRedactsSecretsAndDefaults(t *testing.T) {
 
 func TestHTTPCreateNeedsAnAgent(t *testing.T) {
 	s := New(t)
-	_, err := newClient(t, s).CreateMonitor(context.Background(), &client.MonitorWrite{
+	_, _, err := newClient(t, s).CreateMonitor(context.Background(), &client.MonitorWrite{
 		Name: "a", Type: "http", Target: strp("https://e.com"), IntervalSeconds: 300,
 	})
 	if err == nil {
@@ -89,15 +89,15 @@ func TestQuorumDefaultsAndRange(t *testing.T) {
 	s := New(t)
 	c := newClient(t, s)
 	ctx := context.Background()
-	id, _ := c.CreateMonitor(ctx, &client.MonitorWrite{Name: "q", Type: "http", Target: strp("https://e.com"),
+	id, _, _ := c.CreateMonitor(ctx, &client.MonitorWrite{Name: "q", Type: "http", Target: strp("https://e.com"),
 		IntervalSeconds: 300, AgentSources: []string{"agt_sg", "agt_eu"}})
 	two := int64(2)
-	err := c.UpdateMonitor(ctx, id, &client.MonitorWrite{Name: "q", IntervalSeconds: 300,
+	_, err := c.UpdateMonitor(ctx, id, &client.MonitorWrite{Name: "q", IntervalSeconds: 300,
 		AgentSources: []string{"agt_sg"}, DownMinSources: &two})
 	if err == nil {
 		t.Fatal("down_min_sources 2 with 1 agent accepted")
 	}
-	if err := c.UpdateMonitor(ctx, id, &client.MonitorWrite{Name: "q", IntervalSeconds: 300, AgentSources: []string{"agt_sg"}}); err != nil {
+	if _, err := c.UpdateMonitor(ctx, id, &client.MonitorWrite{Name: "q", IntervalSeconds: 300, AgentSources: []string{"agt_sg"}}); err != nil {
 		t.Fatal(err)
 	}
 	if got := s.StoredMonitor("q").DownMinSources; got != 1 {
@@ -109,7 +109,7 @@ func TestHeartbeatTokenSurvivesPatch(t *testing.T) {
 	s := New(t)
 	c := newClient(t, s)
 	ctx := context.Background()
-	id, _ := c.CreateMonitor(ctx, &client.MonitorWrite{Name: "hb", Type: "heartbeat", IntervalSeconds: 300})
+	id, _, _ := c.CreateMonitor(ctx, &client.MonitorWrite{Name: "hb", Type: "heartbeat", IntervalSeconds: 300})
 	before, _ := c.GetMonitor(ctx, id)
 	if before.CheckSpec.Heartbeat == nil || before.CheckSpec.Heartbeat.Token == "" {
 		t.Fatal("no heartbeat token on create")
@@ -117,7 +117,7 @@ func TestHeartbeatTokenSurvivesPatch(t *testing.T) {
 	if *before.HeartbeatGraceSeconds != 60 {
 		t.Fatalf("grace default = %d", *before.HeartbeatGraceSeconds)
 	}
-	if err := c.UpdateMonitor(ctx, id, &client.MonitorWrite{Name: "hb", IntervalSeconds: 600}); err != nil {
+	if _, err := c.UpdateMonitor(ctx, id, &client.MonitorWrite{Name: "hb", IntervalSeconds: 600}); err != nil {
 		t.Fatal(err)
 	}
 	after, _ := c.GetMonitor(ctx, id)
@@ -134,7 +134,7 @@ func TestPatchRejectsReadOnlyFields(t *testing.T) {
 	id := s.SeedMonitor("http", "a")
 	c := newClient(t, s)
 	for _, typ := range []string{"http", "heartbeat"} {
-		if err := c.UpdateMonitor(context.Background(), id, &client.MonitorWrite{Name: "a", Type: typ, IntervalSeconds: 300}); err == nil {
+		if _, err := c.UpdateMonitor(context.Background(), id, &client.MonitorWrite{Name: "a", Type: typ, IntervalSeconds: 300}); err == nil {
 			t.Fatalf("PATCH with type %q accepted", typ)
 		}
 	}
@@ -152,7 +152,7 @@ func TestPatchRejectsReadOnlyFields(t *testing.T) {
 			t.Fatalf("%s: got %d, want 400", k, res.StatusCode)
 		}
 	}
-	if err := c.UpdateMonitor(context.Background(), id, &client.MonitorWrite{Name: "a", IntervalSeconds: 300}); err != nil {
+	if _, err := c.UpdateMonitor(context.Background(), id, &client.MonitorWrite{Name: "a", IntervalSeconds: 300}); err != nil {
 		t.Fatalf("PATCH without read-only fields rejected: %v", err)
 	}
 }
@@ -249,7 +249,7 @@ func TestOnMonitorPatchHookMutatesBeforeResponding(t *testing.T) {
 	s := New(t)
 	c := newClient(t, s)
 	ctx := context.Background()
-	id, err := c.CreateMonitor(ctx, &client.MonitorWrite{
+	id, _, err := c.CreateMonitor(ctx, &client.MonitorWrite{
 		Name: "a", Type: "http", Target: strp("https://e.com"), IntervalSeconds: 300,
 		AgentSources: []string{"agt_sg"},
 	})
@@ -325,7 +325,7 @@ func TestAssertionsAreNormalizedLikeCheckSpecTS(t *testing.T) {
 	c := newClient(t, s)
 	ctx := context.Background()
 	str := func(v string) *string { return &v }
-	id, err := c.CreateMonitor(ctx, &client.MonitorWrite{
+	id, _, err := c.CreateMonitor(ctx, &client.MonitorWrite{
 		Name: "a", Type: "http", Target: strp("https://e.com"), IntervalSeconds: 300,
 		AgentSources: []string{"agt_sg"},
 		CheckSpec: &client.CheckSpec{Assertions: []client.Assertion{
@@ -351,7 +351,7 @@ func TestAssertionsAreNormalizedLikeCheckSpecTS(t *testing.T) {
 	}
 
 	// PATCH goes through the same normalization.
-	if err := c.UpdateMonitor(ctx, id, &client.MonitorWrite{Name: "a", IntervalSeconds: 300,
+	if _, err := c.UpdateMonitor(ctx, id, &client.MonitorWrite{Name: "a", IntervalSeconds: 300,
 		AgentSources: []string{"agt_sg"},
 		CheckSpec: &client.CheckSpec{Assertions: []client.Assertion{
 			{Source: "header", Op: "equals", Value: str("v"), Name: str("X-A"), Path: str("$.ignored")},
@@ -405,7 +405,7 @@ func TestExpectedStatusValidatedLikeTheServer(t *testing.T) {
 	ctx := context.Background()
 
 	bad := strp("20x")
-	_, err := c.CreateMonitor(ctx, &client.MonitorWrite{
+	_, _, err := c.CreateMonitor(ctx, &client.MonitorWrite{
 		Name: "a", Type: "http", Target: strp("https://e.com"), IntervalSeconds: 300,
 		AgentSources: []string{"agt_sg"}, ExpectedStatus: bad,
 	})
@@ -414,7 +414,7 @@ func TestExpectedStatusValidatedLikeTheServer(t *testing.T) {
 	}
 
 	good := strp("200,")
-	id, err := c.CreateMonitor(ctx, &client.MonitorWrite{
+	id, _, err := c.CreateMonitor(ctx, &client.MonitorWrite{
 		Name: "b", Type: "http", Target: strp("https://e.com"), IntervalSeconds: 300,
 		AgentSources: []string{"agt_sg"}, ExpectedStatus: good,
 	})
@@ -429,8 +429,55 @@ func TestExpectedStatusValidatedLikeTheServer(t *testing.T) {
 		t.Fatalf("expected_status not stored verbatim: %+v", m.ExpectedStatus)
 	}
 
-	if err := c.UpdateMonitor(ctx, id, &client.MonitorWrite{Name: "b", IntervalSeconds: 300,
+	if _, err := c.UpdateMonitor(ctx, id, &client.MonitorWrite{Name: "b", IntervalSeconds: 300,
 		AgentSources: []string{"agt_sg"}, ExpectedStatus: bad}); err == nil {
 		t.Fatal("update with invalid expected_status (20x) accepted")
+	}
+}
+
+func TestChannelCapIs20AndSurfacesTheServerMessage(t *testing.T) {
+	s := New(t)
+	c := newClient(t, s)
+	ctx := context.Background()
+	for i := 0; i < MaxChannels; i++ {
+		if _, err := c.CreateChannel(ctx, client.ChannelCreate{Type: "telegram"}); err != nil {
+			t.Fatalf("channel %d: %v", i+1, err)
+		}
+	}
+	_, err := c.CreateChannel(ctx, client.ChannelCreate{Type: "telegram"})
+	var apiErr *client.APIError
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusBadRequest {
+		t.Fatalf("21st channel: want a 400 APIError, got %v", err)
+	}
+	if want := "You can have up to 20 notification destinations"; !bytes.Contains([]byte(apiErr.Message), []byte(want)) {
+		t.Fatalf("message %q should mention the limit", apiErr.Message)
+	}
+}
+
+// Mirrors src/lib/agent-secret-warning.ts: a saved secret on a monitor that has a customer-run agent
+// is saved, and the answer carries a warning on every create and update while that stays true.
+func TestOwnAgentWithSecretsAnswersWithWarning(t *testing.T) {
+	s := New(t)
+	c := newClient(t, s)
+	ctx := context.Background()
+	withBearer := &client.CheckSpec{Request: &client.RequestSpec{Auth: &client.AuthSpec{Type: "bearer", Token: "t"}}}
+	write := func(agents []string, cs *client.CheckSpec) *client.MonitorWrite {
+		return &client.MonitorWrite{Name: "a", Type: "http", Target: strp("https://e.com"), IntervalSeconds: 300, AgentSources: agents, CheckSpec: cs}
+	}
+
+	id, warnings, err := c.CreateMonitor(ctx, write([]string{"agt_home"}, withBearer))
+	if err != nil || len(warnings) != 1 || warnings[0].Code != "own_agent_no_secrets" {
+		t.Fatalf("create: warnings=%+v err=%v", warnings, err)
+	}
+	patch := write([]string{"agt_home"}, withBearer)
+	patch.Type = ""
+	if warnings, err = c.UpdateMonitor(ctx, id, patch); err != nil || len(warnings) != 1 {
+		t.Fatalf("update: warnings=%+v err=%v", warnings, err)
+	}
+	if _, warnings, err = c.CreateMonitor(ctx, write([]string{"agt_sg"}, withBearer)); err != nil || len(warnings) != 0 {
+		t.Fatalf("shared agent only must not warn: %+v %v", warnings, err)
+	}
+	if _, warnings, err = c.CreateMonitor(ctx, write([]string{"agt_home"}, &client.CheckSpec{})); err != nil || len(warnings) != 0 {
+		t.Fatalf("no secrets must not warn: %+v %v", warnings, err)
 	}
 }

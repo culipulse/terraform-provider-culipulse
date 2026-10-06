@@ -33,6 +33,7 @@ var openAPIFields = map[string]openAPIField{
 	"Monitor.created_at":              {ignored: "read-only timestamp"},
 	"Monitor.updated_at":              {ignored: "read-only timestamp"},
 	"Monitor.check_spec":              {attr: "see CheckSpec"},
+	"Monitor.coverage":                {ignored: "read-only status information (which agents are not reporting right now); not configuration, so the provider neither sends nor stores it"},
 	"Monitor.agent_sources":           {attr: "culipulse_http_monitor.agent_ids"},
 
 	// POST /v1/monitors
@@ -80,8 +81,11 @@ var openAPIFields = map[string]openAPIField{
 	"MonitorList.monitors": {attr: "client.ListMonitors (the acceptance-test sweeper)"},
 
 	// POST/PATCH result
-	"MonitorMutationResult.id":     {attr: "id"},
-	"MonitorMutationResult.status": {ignored: "status is read back with GET after every write"},
+	"MonitorMutationResult.id":               {attr: "id"},
+	"MonitorMutationResult.status":           {ignored: "status is read back with GET after every write"},
+	"MonitorMutationResult.warnings":         {attr: "diagnostic warning on create and update"},
+	"MonitorMutationResult.warnings.code":    {attr: "diagnostic warning on create and update"},
+	"MonitorMutationResult.warnings.message": {attr: "diagnostic warning on create and update"},
 
 	// check_spec (shared by Monitor, MonitorCreate, MonitorPatch)
 	"CheckSpec.request":                       {attr: "see below"},
@@ -104,9 +108,9 @@ var openAPIFields = map[string]openAPIField{
 	"CheckSpec.assertions.value":              {attr: "assertions.value"},
 	"CheckSpec.assertions.path":               {attr: "assertions.path"},
 	"CheckSpec.assertions.name":               {attr: "assertions.name"},
-	"CheckSpec.transport":                     {ignored: "udp monitors only; no udp resource in v0.1"},
+	"CheckSpec.transport":                     {ignored: "tcp/udp monitors only; no tcp/udp resource in v0.1, and the server keeps the stored transport when a PATCH omits check_spec"},
 	"CheckSpec.domain":                        {ignored: "http expiry add-on set by the top-level warn_days; the server keeps it when a PATCH omits warn_days"},
-	"CheckSpec.ping":                          {ignored: "icmp monitors only; no icmp resource in v0.1"},
+	"CheckSpec.ping":                          {ignored: "icmp monitors only; no icmp resource in v0.1, and the server keeps the stored ping settings when a PATCH omits check_spec"},
 	"CheckSpec.heartbeat":                     {attr: "see below"},
 	"CheckSpec.heartbeat.token":               {attr: "culipulse_heartbeat_monitor.ping_url"},
 	"CheckSpec.heartbeat.failEnabled":         {ignored: "not in v0.1; the heartbeat resource never sends check_spec, and the server keeps it when a PATCH omits check_spec"},

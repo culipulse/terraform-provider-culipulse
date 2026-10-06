@@ -112,8 +112,12 @@ func (r *heartbeatMonitorResource) Schema(_ context.Context, _ resource.SchemaRe
 					"configuration afterward keeps the current value — set it explicitly to change it.",
 				Validators: []validator.Int64{int64validator.AtLeast(1)}},
 			"down_after_failures": schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: keepInt,
-				Description: "Missed pings in a row before the monitor is marked down (1–5). Default 2.",
-				Validators:  []validator.Int64{int64validator.Between(1, 5)}},
+				Description: "Has no effect on a heartbeat monitor. A heartbeat is marked down at the first missed ping " +
+					"(after `grace_seconds`), whatever this is set to. Use `grace_seconds` to allow a late ping. " +
+					"Still accepted (1–5) so existing configurations keep working.",
+				DeprecationMessage: "down_after_failures has no effect on culipulse_heartbeat_monitor: a heartbeat goes down at the " +
+					"first missed ping. Remove it and use grace_seconds to allow a late ping.",
+				Validators: []validator.Int64{int64validator.Between(1, 5)}},
 			"sla_target": schema.Float64Attribute{Optional: true,
 				Description: "Uptime goal in percent, e.g. 99.9. Used by SLA reports.",
 				Validators:  []validator.Float64{float64validator.Between(0.001, 100)}},
@@ -136,11 +140,12 @@ func (r *heartbeatMonitorResource) Create(ctx context.Context, req resource.Crea
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	id, err := r.client.CreateMonitor(ctx, heartbeatMonitorWrite(plan, true))
+	id, warnings, err := r.client.CreateMonitor(ctx, heartbeatMonitorWrite(plan, true))
 	if err != nil {
 		resp.Diagnostics.AddError("Error creating heartbeat monitor", err.Error())
 		return
 	}
+	addAPIWarnings(&resp.Diagnostics, warnings)
 	// Record the id first so a failing read-back doesn't orphan the monitor.
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), id)...)
 	api, err := r.client.GetMonitor(ctx, id)
@@ -183,10 +188,12 @@ func (r *heartbeatMonitorResource) Update(ctx context.Context, req resource.Upda
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if err := r.client.UpdateMonitor(ctx, plan.ID.ValueString(), heartbeatMonitorWrite(plan, false)); err != nil {
+	warnings, err := r.client.UpdateMonitor(ctx, plan.ID.ValueString(), heartbeatMonitorWrite(plan, false))
+	if err != nil {
 		resp.Diagnostics.AddError("Error updating heartbeat monitor", err.Error())
 		return
 	}
+	addAPIWarnings(&resp.Diagnostics, warnings)
 	api, err := r.client.GetMonitor(ctx, plan.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Error reading heartbeat monitor after update", err.Error())

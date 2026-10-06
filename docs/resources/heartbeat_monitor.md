@@ -36,7 +36,7 @@ output "backup_ping_url" {
 
 ### Optional
 
-- `down_after_failures` (Number) Missed pings in a row before the monitor is marked down (1–5). Default 2.
+- `down_after_failures` (Number, Deprecated) Has no effect on a heartbeat monitor. A heartbeat is marked down at the first missed ping (after `grace_seconds`), whatever this is set to. Use `grace_seconds` to allow a late ping. Still accepted (1–5) so existing configurations keep working.
 - `grace_seconds` (Number) Extra time allowed after the expected ping before it counts as missed. The default (20% of the interval, at least 60) applies when the monitor is created; removing this from your configuration afterward keeps the current value — set it explicitly to change it.
 - `sla_target` (Number) Uptime goal in percent, e.g. 99.9. Used by SLA reports.
 

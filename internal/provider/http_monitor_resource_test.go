@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strings"
@@ -8,6 +9,12 @@ import (
 
 	"github.com/culipulse/terraform-provider-culipulse/internal/client"
 	"github.com/culipulse/terraform-provider-culipulse/internal/fakeapi"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	fwresource "github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
@@ -255,7 +262,12 @@ func TestHTTPMonitor_validation(t *testing.T) {
 		`both auth kinds`:                   "  bearer_token = \"t\"\n  basic_auth_username = \"u\"\n  basic_auth_password = \"p\"",
 		`empty headers map`:                 `  headers = {}`,
 		`bad header name`:                   `  headers = { "bad name" = "x" }`,
-		`username needs password`:           `  basic_auth_username = "u"`,
+		// #311: the API caps header names at 256 and values at 8,192 characters.
+		`header name too long`:         `  headers = { "` + strings.Repeat("a", 257) + `" = "x" }`,
+		`header value too long`:        `  headers = { "X-Big" = "` + strings.Repeat("a", 8193) + `" }`,
+		`secret header name too long`:  `  secret_headers = { "` + strings.Repeat("a", 257) + `" = "x" }`,
+		`secret header value too long`: `  secret_headers = { "X-Big" = "` + strings.Repeat("a", 8193) + `" }`,
+		`username needs password`:      `  basic_auth_username = "u"`,
 		// A6.6: empty string turns into a type-only auth object server-side, which means "keep
 		// the stored secret" — not "clear it" — so it must be rejected at plan time.
 		`empty bearer token`: `  bearer_token = ""`,
@@ -272,6 +284,90 @@ func TestHTTPMonitor_validation(t *testing.T) {
 				}},
 			})
 		})
+	}
+}
+
+// #311: boundary check on the header size validators, straight off the schema.
+func TestHTTPMonitor_headerSizeLimitsBoundary(t *testing.T) {
+	var sr fwresource.SchemaResponse
+	NewHTTPMonitorResource().Schema(context.Background(), fwresource.SchemaRequest{}, &sr)
+	for _, attrName := range []string{"headers", "secret_headers"} {
+		ma, ok := sr.Schema.Attributes[attrName].(schema.MapAttribute)
+		if !ok {
+			t.Fatalf("%s is not a MapAttribute", attrName)
+		}
+		run := func(name, value string) bool {
+			v := types.MapValueMust(types.StringType, map[string]attr.Value{name: types.StringValue(value)})
+			failed := false
+			for _, val := range ma.Validators {
+				var resp validator.MapResponse
+				val.ValidateMap(context.Background(), validator.MapRequest{Path: path.Root(attrName), ConfigValue: v}, &resp)
+				if resp.Diagnostics.HasError() {
+					failed = true
+				}
+			}
+			return failed
+		}
+		cases := []struct {
+			desc        string
+			name, value string
+			wantErr     bool
+		}{
+			{"value at limit", "X-Ok", strings.Repeat("a", 8192), false},
+			{"value over limit", "X-Ok", strings.Repeat("a", 8193), true},
+			{"name at limit", strings.Repeat("a", 256), "x", false},
+			{"name over limit", strings.Repeat("a", 257), "x", true},
+		}
+		for _, c := range cases {
+			if got := run(c.name, c.value); got != c.wantErr {
+				t.Errorf("%s/%s: error=%v, want %v", attrName, c.desc, got, c.wantErr)
+			}
+		}
+	}
+}
+
+// #311: url and expected_status are capped server-side (2,048 / 128 characters); the provider
+// fails at plan time on the same boundary.
+func TestHTTPMonitor_urlAndExpectedStatusLengthBoundary(t *testing.T) {
+	var sr fwresource.SchemaResponse
+	NewHTTPMonitorResource().Schema(context.Background(), fwresource.SchemaRequest{}, &sr)
+	run := func(attrName, value string) bool {
+		sa, ok := sr.Schema.Attributes[attrName].(schema.StringAttribute)
+		if !ok {
+			t.Fatalf("%s is not a StringAttribute", attrName)
+		}
+		failed := false
+		for _, val := range sa.Validators {
+			var resp validator.StringResponse
+			val.ValidateString(context.Background(), validator.StringRequest{Path: path.Root(attrName), ConfigValue: types.StringValue(value)}, &resp)
+			if resp.Diagnostics.HasError() {
+				failed = true
+			}
+		}
+		return failed
+	}
+	urlOfLength := func(n int) string {
+		head := "https://example.com/"
+		return head + strings.Repeat("a", n-len(head))
+	}
+	statusOfLength := func(n int) string {
+		// "200,200,…" padded with commas (empty tokens are allowed), so only the length can fail
+		v := strings.Repeat("200,", n/4)
+		return v + strings.Repeat(",", n-len(v))
+	}
+	cases := []struct {
+		desc, attr, value string
+		wantErr           bool
+	}{
+		{"url at limit", "url", urlOfLength(2048), false},
+		{"url over limit", "url", urlOfLength(2049), true},
+		{"expected_status at limit", "expected_status", statusOfLength(128), false},
+		{"expected_status over limit", "expected_status", statusOfLength(129), true},
+	}
+	for _, c := range cases {
+		if got := run(c.attr, c.value); got != c.wantErr {
+			t.Errorf("%s (len %d): error=%v, want %v", c.desc, len(c.value), got, c.wantErr)
+		}
 	}
 }
 
@@ -445,6 +541,32 @@ func TestHTTPMonitor_statusChangeDuringUpdateIsNotAnError(t *testing.T) {
 				Config: httpQuorumConfig(f, "s-renamed", `["agt_sg"]`, ""),
 				Check:  resource.TestCheckResourceAttr(httpAddr, "status", "down"),
 			},
+		},
+	})
+}
+
+// A secret on a monitor that runs on the user's own agent (fake agt_home) makes the API answer with
+// a warning on create and on update. It must come through as a warning, never an error: the apply
+// succeeds and the plan stays empty. (terraform-plugin-testing can't assert warning text; the text
+// path is covered by TestAddAPIWarnings_* and the fakeapi warning test.)
+func TestHTTPMonitor_ownAgentWithSecretsAppliesWithWarning(t *testing.T) {
+	f := fakeapi.New(t)
+	cfg := func(name string) string {
+		return fakeConfig(f, fmt.Sprintf(`
+resource "culipulse_http_monitor" "m" {
+  name             = %q
+  url              = "https://intranet.example.com/health"
+  interval_seconds = 300
+  agent_ids        = ["agt_home"]
+  bearer_token     = "tok"
+}
+`, name))
+	}
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: testProviderFactories(),
+		Steps: []resource.TestStep{
+			{Config: cfg("api")},
+			{Config: cfg("api-renamed"), Check: resource.TestCheckResourceAttr(httpAddr, "name", "api-renamed")},
 		},
 	})
 }

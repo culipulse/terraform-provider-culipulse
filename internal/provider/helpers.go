@@ -124,3 +124,12 @@ func monitorTypeArticle(monitorType string) string {
 	}
 	return "a " + monitorType
 }
+
+// addAPIWarnings turns the warnings the API attached to a successful monitor save into Terraform
+// warning diagnostics. The save worked, so they never fail an apply; they repeat on every apply
+// while the situation stands (the API sends them on every save).
+func addAPIWarnings(diags *diag.Diagnostics, warnings []client.Warning) {
+	for _, w := range warnings {
+		diags.AddWarning("Saved, with a caveat", w.Message)
+	}
+}

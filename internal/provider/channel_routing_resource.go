@@ -46,14 +46,17 @@ func (r *channelRoutingResource) Configure(_ context.Context, req resource.Confi
 func (r *channelRoutingResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Description: "Chooses which monitors send alerts to a notification channel (webhook, Slack or Telegram). " +
-			"Use one per channel. Removing it sends every monitor's alerts to the channel again, which is the default.",
+			"Use one per channel. Removing it sends every monitor's alerts to the channel again, which is the default. " +
+			"A channel can be routed to as many monitors as your plan allows (or as many as you already own, if that is more); a longer list is rejected without changing the current routing.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{Computed: true, Description: "Same as `channel_id`.",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 			"channel_id": schema.StringAttribute{Required: true, Description: "The channel to route alerts to.",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
 			"all_monitors": schema.BoolAttribute{Optional: true, Computed: true, Default: booldefault.StaticBool(false),
-				Description: "Send alerts from every monitor, including ones created later. Default false."},
+				Description: "Send alerts from every monitor, including ones created later. Default false. " +
+					"A channel with `all_monitors = false` only covers the monitors in `monitor_ids`: it does NOT pick up " +
+					"monitors created later, so add them to `monitor_ids` or they will not alert here."},
 			"monitor_ids": schema.SetAttribute{Optional: true, ElementType: types.StringType,
 				Description: "Monitors whose alerts go to this channel. Leave out when `all_monitors` is true. " +
 					"Set it to an explicit empty list (`[]`) to intentionally route no monitors to this channel " +

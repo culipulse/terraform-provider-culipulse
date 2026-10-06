@@ -25,21 +25,26 @@ func (c *Client) ListMonitors(ctx context.Context) ([]Monitor, error) {
 	return out.Monitors, nil
 }
 
-func (c *Client) CreateMonitor(ctx context.Context, w *MonitorWrite) (string, error) {
-	var out struct {
-		ID string `json:"id"`
-	}
+// CreateMonitor returns the new id and any warnings the server attached to the save (the save
+// itself worked). The caller shows them; they are not errors.
+func (c *Client) CreateMonitor(ctx context.Context, w *MonitorWrite) (string, []Warning, error) {
+	var out MonitorMutationResult
 	if err := c.do(ctx, http.MethodPost, "/monitors", w, &out); err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if out.ID == "" {
-		return "", errors.New("create monitor: response had no id")
+		return "", nil, errors.New("create monitor: response had no id")
 	}
-	return out.ID, nil
+	return out.ID, out.Warnings, nil
 }
 
-func (c *Client) UpdateMonitor(ctx context.Context, id string, w *MonitorWrite) error {
-	return c.do(ctx, http.MethodPatch, "/monitors/"+url.PathEscape(id), w, nil)
+// UpdateMonitor returns the warnings the server attached to the save, if any.
+func (c *Client) UpdateMonitor(ctx context.Context, id string, w *MonitorWrite) ([]Warning, error) {
+	var out MonitorMutationResult
+	if err := c.do(ctx, http.MethodPatch, "/monitors/"+url.PathEscape(id), w, &out); err != nil {
+		return nil, err
+	}
+	return out.Warnings, nil
 }
 
 // DeleteMonitor answers 204 (channels answer 200 {ok:true}); both are plain success here.

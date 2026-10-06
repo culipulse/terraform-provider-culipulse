@@ -37,7 +37,7 @@ func TestCreateMonitor_postsAndReturnsID(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 		w.Write([]byte(`{"id":"mon_1","status":"pending"}`))
 	})
-	id, err := c.CreateMonitor(context.Background(), &MonitorWrite{Name: "x", Type: "http", IntervalSeconds: 300, CheckSpec: &CheckSpec{}})
+	id, _, err := c.CreateMonitor(context.Background(), &MonitorWrite{Name: "x", Type: "http", IntervalSeconds: 300, CheckSpec: &CheckSpec{}})
 	if err != nil || id != "mon_1" {
 		t.Fatalf("id=%q err=%v", id, err)
 	}
@@ -50,7 +50,7 @@ func TestUpdateMonitor_patchesEscapedPath(t *testing.T) {
 		}
 		w.Write([]byte(`{"id":"mon/1","status":"up"}`))
 	})
-	if err := c.UpdateMonitor(context.Background(), "mon/1", &MonitorWrite{Name: "x"}); err != nil {
+	if _, err := c.UpdateMonitor(context.Background(), "mon/1", &MonitorWrite{Name: "x"}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -162,5 +162,44 @@ func TestListAgentsAndChannelsAndMonitors(t *testing.T) {
 	ms, err := c.ListMonitors(ctx)
 	if err != nil || len(ms) != 1 || ms[0].ID != "mon_1" {
 		t.Fatalf("%+v %v", ms, err)
+	}
+}
+
+func TestCreateMonitor_returnsServerWarnings(t *testing.T) {
+	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte(`{"id":"mon_1","status":"pending","warnings":[{"code":"own_agent_no_secrets","message":"m1"}]}`))
+	})
+	id, warnings, err := c.CreateMonitor(context.Background(), &MonitorWrite{Name: "x", Type: "http", IntervalSeconds: 300})
+	if err != nil || id != "mon_1" {
+		t.Fatalf("id=%q err=%v", id, err)
+	}
+	if len(warnings) != 1 || warnings[0].Code != "own_agent_no_secrets" || warnings[0].Message != "m1" {
+		t.Fatalf("warnings = %+v", warnings)
+	}
+}
+
+func TestUpdateMonitor_returnsServerWarnings(t *testing.T) {
+	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"id":"mon_1","status":"up","warnings":[{"code":"own_agent_no_secrets","message":"m2"}]}`))
+	})
+	warnings, err := c.UpdateMonitor(context.Background(), "mon_1", &MonitorWrite{Name: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warnings) != 1 || warnings[0].Message != "m2" {
+		t.Fatalf("warnings = %+v", warnings)
+	}
+}
+
+func TestMonitorWrites_noWarningsKeyMeansNone(t *testing.T) {
+	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"id":"mon_1","status":"up"}`))
+	})
+	if _, warnings, err := c.CreateMonitor(context.Background(), &MonitorWrite{Name: "x", Type: "http", IntervalSeconds: 300}); err != nil || len(warnings) != 0 {
+		t.Fatalf("create warnings=%v err=%v", warnings, err)
+	}
+	if warnings, err := c.UpdateMonitor(context.Background(), "mon_1", &MonitorWrite{Name: "x"}); err != nil || len(warnings) != 0 {
+		t.Fatalf("update warnings=%v err=%v", warnings, err)
 	}
 }

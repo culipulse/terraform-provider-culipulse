@@ -48,24 +48,24 @@ resource "culipulse_http_monitor" "api" {
 - `agent_ids` (Set of String) Agents that run the check. Use the `culipulse_agents` data source to look them up.
 - `interval_seconds` (Number) How often to check, in seconds. Your plan sets the minimum (Free: 300).
 - `name` (String) Name shown in the console and in alerts.
-- `url` (String) The http:// or https:// address to check.
+- `url` (String) The http:// or https:// address to check, up to 2,048 characters. A private, loopback or link-local IP address (like `192.168.1.10`) is accepted only when every entry in `agent_ids` is one of your own agents; with any shared agent the API refuses it.
 
 ### Optional
 
 - `assertions` (Attributes List) Extra conditions the response must meet for the monitor to be up. (see [below for nested schema](#nestedatt--assertions))
-- `basic_auth_password` (String, Sensitive) Password for HTTP basic auth. Stored encrypted; changes made outside Terraform are not detected.
-- `basic_auth_username` (String) Username for HTTP basic auth. Needs `basic_auth_password`.
-- `bearer_token` (String, Sensitive) Sent as `Authorization: Bearer <token>`. Stored encrypted; changes made outside Terraform are not detected.
-- `body_match` (String) Text the response body must contain.
+- `basic_auth_password` (String, Sensitive) Password for HTTP basic auth. Stored encrypted; changes made outside Terraform are not detected. Agents you run yourself never receive this value, so a check from one of your own agents runs without it: use a shared agent in `agent_ids` for checks that need it. CuliPulse warns about this on every apply while the combination stands.
+- `basic_auth_username` (String) Username for HTTP basic auth. Needs `basic_auth_password`. Agents you run yourself never receive this value, so a check from one of your own agents runs without it: use a shared agent in `agent_ids` for checks that need it. CuliPulse warns about this on every apply while the combination stands.
+- `bearer_token` (String, Sensitive) Sent as `Authorization: Bearer <token>`. Stored encrypted; changes made outside Terraform are not detected. Agents you run yourself never receive this value, so a check from one of your own agents runs without it: use a shared agent in `agent_ids` for checks that need it. CuliPulse warns about this on every apply while the combination stands.
+- `body_match` (String) Text the response body must contain (case-sensitive, up to 1,024 characters). Only the first 1 MiB of the body is searched.
 - `content_type` (String) Content-Type for `request_body`, e.g. `application/json`.
 - `down_after_failures` (Number) Failed checks in a row before the monitor is marked down (1-5). The default (2) applies when the monitor is created; removing this from your configuration afterward keeps the current value — set it explicitly to change it.
-- `down_min_sources` (Number) How many agents must see the failure before the monitor is marked down (1 to the number of agents). The default (2 when there are at least two agents, else 1) applies when the monitor is created and is picked again whenever `agent_ids` changes; removing this from your configuration otherwise keeps the current value — set it explicitly to change it.
-- `expected_status` (String) Which status codes count as up, e.g. `200`, `2xx` or `200, 301` (case-insensitive). The default (`2xx`) applies when the monitor is created; removing this from your configuration afterward keeps the current value — set it explicitly to change it.
+- `down_min_sources` (Number) How many agents must see the failure before the monitor is marked down (1 to the number of agents). This is only enforced while that many agents are reporting: if fewer are, the agents that are reporting decide. Deleting an agent lowers a value above the number of agents that remain, so a configuration that pins the old number then fails at apply until you lower it. The default (2 when there are at least two agents, else 1) applies when the monitor is created and is picked again whenever `agent_ids` changes; removing this from your configuration otherwise keeps the current value — set it explicitly to change it.
+- `expected_status` (String) Which status codes count as up, e.g. `200`, `2xx` or `200, 301` (case-insensitive), up to 128 characters. The default (`2xx`) applies when the monitor is created; removing this from your configuration afterward keeps the current value — set it explicitly to change it.
 - `follow_redirects` (Boolean) Follow redirects before judging the answer. Default true.
-- `headers` (Map of String) Request headers sent with every check. Visible in the console.
+- `headers` (Map of String) Request headers sent with every check. Visible in the console. Names up to 256 characters, values up to 8,192 characters; at most 50 headers across headers and secret_headers.
 - `method` (String) HTTP method: GET, HEAD, POST, PUT, PATCH, DELETE or OPTIONS. The default (GET) applies when the monitor is created; removing this from your configuration afterward keeps the current value — set it explicitly to change it.
 - `request_body` (String) Body sent with the request (for POST/PUT/PATCH checks).
-- `secret_headers` (Map of String, Sensitive) Request headers whose values are stored encrypted and never shown again, e.g. API keys. CuliPulse can't return them, so changes made outside Terraform are not detected.
+- `secret_headers` (Map of String, Sensitive) Request headers whose values are stored encrypted and never shown again, e.g. API keys. CuliPulse can't return them, so changes made outside Terraform are not detected. Names up to 256 characters, values up to 8,192 characters; at most 50 headers across headers and secret_headers. Agents you run yourself never receive this value, so a check from one of your own agents runs without it: use a shared agent in `agent_ids` for checks that need it. CuliPulse warns about this on every apply while the combination stands.
 - `sla_target` (Number) Uptime goal in percent, e.g. 99.9. Used by SLA reports.
 - `timeout_ms` (Number) How long to wait for an answer, in milliseconds. At most 10000 and less than the interval. The default (10000) applies when the monitor is created; removing this from your configuration afterward keeps the current value — set it explicitly to change it.
 - `up_after_successes` (Number) Successful checks in a row before a down monitor is marked up again (1-5). The default (1) applies when the monitor is created; removing this from your configuration afterward keeps the current value — set it explicitly to change it.

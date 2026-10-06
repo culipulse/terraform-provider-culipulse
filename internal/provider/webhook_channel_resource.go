@@ -95,7 +95,9 @@ func (r *webhookChannelResource) Schema(_ context.Context, _ resource.SchemaRequ
 	keepStr := []planmodifier.String{stringplanmodifier.UseStateForUnknown()}
 	resp.Schema = schema.Schema{
 		Description: "Sends alerts as signed JSON POST requests to your own endpoint. Which monitors alert here is set " +
-			"with `culipulse_channel_routing`; a new channel receives alerts for every monitor until you route it.",
+			"with `culipulse_channel_routing`; a new channel receives alerts for every monitor until you route it. " +
+			"An account can have up to 20 notification destinations of all types; creating more fails with an error saying so. " +
+			"A URL that another webhook channel in the account already uses is rejected, so edit or route that channel instead of adding a second one.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{Computed: true, Description: "Channel id.", PlanModifiers: keepStr},
 			"name": schema.StringAttribute{Required: true, Description: "Name shown in the console.",

@@ -3,12 +3,12 @@
 page_title: "culipulse_channel_routing Resource - culipulse"
 subcategory: ""
 description: |-
-  Chooses which monitors send alerts to a notification channel (webhook, Slack or Telegram). Use one per channel. Removing it sends every monitor's alerts to the channel again, which is the default.
+  Chooses which monitors send alerts to a notification channel (webhook, Slack or Telegram). Use one per channel. Removing it sends every monitor's alerts to the channel again, which is the default. A channel can be routed to as many monitors as your plan allows (or as many as you already own, if that is more); a longer list is rejected without changing the current routing.
 ---
 
 # culipulse_channel_routing (Resource)
 
-Chooses which monitors send alerts to a notification channel (webhook, Slack or Telegram). Use one per channel. Removing it sends every monitor's alerts to the channel again, which is the default.
+Chooses which monitors send alerts to a notification channel (webhook, Slack or Telegram). Use one per channel. Removing it sends every monitor's alerts to the channel again, which is the default. A channel can be routed to as many monitors as your plan allows (or as many as you already own, if that is more); a longer list is rejected without changing the current routing.
 
 ## Example Usage
 
@@ -40,7 +40,7 @@ resource "culipulse_channel_routing" "incidents" {
 
 ### Optional
 
-- `all_monitors` (Boolean) Send alerts from every monitor, including ones created later. Default false.
+- `all_monitors` (Boolean) Send alerts from every monitor, including ones created later. Default false. A channel with `all_monitors = false` only covers the monitors in `monitor_ids`: it does NOT pick up monitors created later, so add them to `monitor_ids` or they will not alert here.
 - `monitor_ids` (Set of String) Monitors whose alerts go to this channel. Leave out when `all_monitors` is true. Set it to an explicit empty list (`[]`) to intentionally route no monitors to this channel (mute it) while keeping `all_monitors = false`; omitting both `all_monitors` and `monitor_ids` is rejected because it doesn't say what you want.
 
 ### Read-Only

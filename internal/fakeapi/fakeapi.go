@@ -214,6 +214,23 @@ func sortedCopy(in []string) []string {
 	return out
 }
 
+// warningsFor mirrors monitorWarnings in src/lib/agent-secret-warning.ts: a customer-run (tenant)
+// agent among the sources plus any saved secret in the spec yields one `own_agent_no_secrets`.
+func (s *Server) warningsFor(agentIDs []string, cs client.CheckSpec) []client.Warning {
+	hasSecrets := cs.Request != nil && (cs.Request.Auth != nil || len(cs.Request.SecretHeaders) > 0)
+	if !hasSecrets {
+		return nil
+	}
+	for _, id := range agentIDs {
+		for _, a := range s.agents {
+			if a.ID == id && a.Kind != "first_party" {
+				return []client.Warning{{Code: "own_agent_no_secrets", Message: "Your own agents never receive saved sign-in details, secret headers, secret request bodies or secret payloads, so checks from them run without these."}}
+			}
+		}
+	}
+	return nil
+}
+
 func (s *Server) createMonitor(w http.ResponseWriter, body []byte) {
 	var in client.MonitorWrite
 	if err := json.Unmarshal(body, &in); err != nil {
@@ -288,7 +305,7 @@ func (s *Server) createMonitor(w http.ResponseWriter, body []byte) {
 		cs.Heartbeat = &client.HeartbeatSpec{Token: fmt.Sprintf("%s.fakesecret%d", id, s.seq)}
 	}
 	s.monitors[id] = &storedMonitor{m: m, checkSpec: cs, agents: sortedCopy(in.AgentSources)}
-	writeJSON(w, http.StatusCreated, map[string]string{"id": id, "status": "pending"})
+	writeJSON(w, http.StatusCreated, client.MonitorMutationResult{ID: id, Status: "pending", Warnings: s.warningsFor(in.AgentSources, cs)})
 }
 
 func (s *Server) listMonitors(w http.ResponseWriter) {
@@ -452,10 +469,13 @@ func (s *Server) patchMonitor(w http.ResponseWriter, sm *storedMonitor, body []b
 	if s.OnMonitorPatch != nil { // A3.3: async status write, mid-request, before responding
 		s.OnMonitorPatch(&sm.m)
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"id": sm.m.ID, "status": sm.m.Status})
+	writeJSON(w, http.StatusOK, client.MonitorMutationResult{ID: sm.m.ID, Status: sm.m.Status, Warnings: s.warningsFor(sm.agents, sm.checkSpec)})
 }
 
 // ---- channels ----
+
+// MaxChannels is the real API's per-account destination cap.
+const MaxChannels = 20
 
 func (s *Server) projectChannel(ch *storedChannel) client.Channel {
 	c := ch.c
@@ -504,6 +524,15 @@ func (s *Server) createChannel(w http.ResponseWriter, body []byte) {
 	// treats missing/empty/whitespace-only as the normal "create unnamed" case — it does
 	// NOT 400 (a 400 there was invented behavior the real server doesn't have).
 	in.Name = strings.TrimSpace(in.Name)
+	// Mirrors the real server's flat per-account cap (channel-routing.ts MAX_CHANNELS_PER_TENANT):
+	// checked before anything else, 400 with the stable code `channel_limit_reached`.
+	if len(s.channels) >= MaxChannels {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error": "You can have up to 20 notification destinations. Remove one you no longer use to add another.",
+			"code":  "channel_limit_reached", "limit": MaxChannels,
+		})
+		return
+	}
 	s.seq++
 	id := fmt.Sprintf("ch_%d", s.seq)
 	ch := &storedChannel{

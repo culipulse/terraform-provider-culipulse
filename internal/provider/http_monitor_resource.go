@@ -55,8 +55,9 @@ func (r *httpMonitorResource) Schema(_ context.Context, _ resource.SchemaRequest
 			"id": schema.StringAttribute{Computed: true, Description: "Monitor id.", PlanModifiers: keepStr},
 			"name": schema.StringAttribute{Required: true, Description: "Name shown in the console and in alerts.",
 				Validators: []validator.String{stringvalidator.LengthAtLeast(1)}},
-			"url": schema.StringAttribute{Required: true, Description: "The http:// or https:// address to check.",
-				Validators: []validator.String{stringvalidator.RegexMatches(regexp.MustCompile(`^https?://`), "must start with http:// or https://")}},
+			"url": schema.StringAttribute{Required: true, Description: "The http:// or https:// address to check, up to 2,048 characters. A private, loopback or link-local IP address (like `192.168.1.10`) is accepted only when every entry in `agent_ids` is one of your own agents; with any shared agent the API refuses it.",
+				Validators: []validator.String{stringvalidator.RegexMatches(regexp.MustCompile(`^https?://`), "must start with http:// or https://"),
+					stringvalidator.LengthAtMost(2048)}},
 			"interval_seconds": schema.Int64Attribute{Required: true,
 				Description: "How often to check, in seconds. Your plan sets the minimum (Free: 300).",
 				Validators:  []validator.Int64{int64validator.AtLeast(1)}},
@@ -71,7 +72,7 @@ func (r *httpMonitorResource) Schema(_ context.Context, _ resource.SchemaRequest
 					"set it explicitly to change it.",
 				Validators: []validator.String{stringvalidator.OneOf("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")}},
 			"expected_status": schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: keepStr,
-				Description: "Which status codes count as up, e.g. `200`, `2xx` or `200, 301` (case-insensitive). The " +
+				Description: "Which status codes count as up, e.g. `200`, `2xx` or `200, 301` (case-insensitive), up to 128 characters. The " +
 					"default (`2xx`) applies when the monitor is created; removing this from your configuration " +
 					"afterward keeps the current value — set it explicitly to change it.",
 				// K2: expectedStatusValidator mirrors classify.ts's isValidExpectedStatus token by
@@ -80,10 +81,10 @@ func (r *httpMonitorResource) Schema(_ context.Context, _ resource.SchemaRequest
 				// this replaced was close but stricter than the server: it rejected values like a
 				// trailing comma ("200,") or an empty token in the middle ("200,,301") that the
 				// server happily accepts.
-				Validators: []validator.String{expectedStatusValid()}},
+				Validators: []validator.String{expectedStatusValid(), stringvalidator.LengthAtMost(128)}},
 			"body_match": schema.StringAttribute{Optional: true,
-				Description: "Text the response body must contain.",
-				Validators:  []validator.String{stringvalidator.LengthAtLeast(1)}},
+				Description: "Text the response body must contain (case-sensitive, up to 1,024 characters). Only the first 1 MiB of the body is searched.",
+				Validators:  []validator.String{stringvalidator.LengthAtLeast(1), stringvalidator.LengthAtMost(1024)}},
 			"follow_redirects": schema.BoolAttribute{Optional: true, Computed: true,
 				PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 				Description:   "Follow redirects before judging the answer. Default true."},
@@ -100,7 +101,9 @@ func (r *httpMonitorResource) Schema(_ context.Context, _ resource.SchemaRequest
 			"down_min_sources": schema.Int64Attribute{Optional: true, Computed: true,
 				PlanModifiers: []planmodifier.Int64{quorumFollowsAgents{}},
 				Description: "How many agents must see the failure before the monitor is marked down (1 to the number of agents). " +
-					"The default (2 when there are at least two agents, else 1) applies when the monitor is created and is " +
+					"This is only enforced while that many agents are reporting: if fewer are, the agents that are reporting decide. " +
+					"Deleting an agent lowers a value above the number of agents that remain, so a configuration that pins the old " +
+					"number then fails at apply until you lower it. The default (2 when there are at least two agents, else 1) applies when the monitor is created and is " +
 					"picked again whenever `agent_ids` changes; removing this from your configuration otherwise keeps the " +
 					"current value — set it explicitly to change it.",
 				Validators: []validator.Int64{int64validator.AtLeast(1)}},
@@ -111,29 +114,39 @@ func (r *httpMonitorResource) Schema(_ context.Context, _ resource.SchemaRequest
 				Description: "Agents that run the check. Use the `culipulse_agents` data source to look them up.",
 				Validators:  []validator.Set{setvalidator.SizeAtLeast(1)}},
 			"headers": schema.MapAttribute{Optional: true, ElementType: types.StringType,
-				Description: "Request headers sent with every check. Visible in the console.",
+				Description: "Request headers sent with every check. Visible in the console. " +
+					"Names up to 256 characters, values up to 8,192 characters; at most 50 headers across headers and secret_headers.",
 				Validators: []validator.Map{mapvalidator.SizeAtLeast(1),
-					mapvalidator.KeysAre(stringvalidator.RegexMatches(headerNameRE, "letters, digits and dashes only"))}},
+					mapvalidator.KeysAre(stringvalidator.RegexMatches(headerNameRE, "letters, digits and dashes only"),
+						stringvalidator.LengthAtMost(256)),
+					mapvalidator.ValueStringsAre(stringvalidator.LengthAtMost(8192))}},
 			"secret_headers": schema.MapAttribute{Optional: true, Sensitive: true, ElementType: types.StringType,
 				Description: "Request headers whose values are stored encrypted and never shown again, e.g. API keys. " +
-					"CuliPulse can't return them, so changes made outside Terraform are not detected.",
+					"CuliPulse can't return them, so changes made outside Terraform are not detected. " +
+					"Names up to 256 characters, values up to 8,192 characters; at most 50 headers across headers and secret_headers." +
+					" Agents you run yourself never receive this value, so a check from one of your own agents runs without it: use a shared agent in `agent_ids` for checks that need it. CuliPulse warns about this on every apply while the combination stands.",
 				Validators: []validator.Map{mapvalidator.SizeAtLeast(1),
-					mapvalidator.KeysAre(stringvalidator.RegexMatches(headerNameRE, "letters, digits and dashes only"))}},
+					mapvalidator.KeysAre(stringvalidator.RegexMatches(headerNameRE, "letters, digits and dashes only"),
+						stringvalidator.LengthAtMost(256)),
+					mapvalidator.ValueStringsAre(stringvalidator.LengthAtMost(8192))}},
 			"basic_auth_username": schema.StringAttribute{Optional: true,
-				Description: "Username for HTTP basic auth. Needs `basic_auth_password`.",
+				Description: "Username for HTTP basic auth. Needs `basic_auth_password`." +
+					" Agents you run yourself never receive this value, so a check from one of your own agents runs without it: use a shared agent in `agent_ids` for checks that need it. CuliPulse warns about this on every apply while the combination stands.",
 				Validators: []validator.String{
 					stringvalidator.LengthAtLeast(1),
 					stringvalidator.AlsoRequires(path.MatchRoot("basic_auth_password")),
 					stringvalidator.ConflictsWith(path.MatchRoot("bearer_token")),
 				}},
 			"basic_auth_password": schema.StringAttribute{Optional: true, Sensitive: true,
-				Description: "Password for HTTP basic auth. Stored encrypted; changes made outside Terraform are not detected.",
+				Description: "Password for HTTP basic auth. Stored encrypted; changes made outside Terraform are not detected." +
+					" Agents you run yourself never receive this value, so a check from one of your own agents runs without it: use a shared agent in `agent_ids` for checks that need it. CuliPulse warns about this on every apply while the combination stands.",
 				Validators: []validator.String{
 					stringvalidator.LengthAtLeast(1),
 					stringvalidator.AlsoRequires(path.MatchRoot("basic_auth_username")),
 				}},
 			"bearer_token": schema.StringAttribute{Optional: true, Sensitive: true,
-				Description: "Sent as `Authorization: Bearer <token>`. Stored encrypted; changes made outside Terraform are not detected.",
+				Description: "Sent as `Authorization: Bearer <token>`. Stored encrypted; changes made outside Terraform are not detected." +
+					" Agents you run yourself never receive this value, so a check from one of your own agents runs without it: use a shared agent in `agent_ids` for checks that need it. CuliPulse warns about this on every apply while the combination stands.",
 				// A6.6: a type-only auth object ({"type":"bearer"}, no token) means "keep the
 				// stored secret" server-side (check-spec.ts:108-112), and the client's omitempty
 				// turns bearer_token = "" into exactly that object — so an empty string here
@@ -249,11 +262,12 @@ func (r *httpMonitorResource) Create(ctx context.Context, req resource.CreateReq
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	id, err := r.client.CreateMonitor(ctx, w)
+	id, warnings, err := r.client.CreateMonitor(ctx, w)
 	if err != nil {
 		resp.Diagnostics.AddError("Error creating http monitor", err.Error())
 		return
 	}
+	addAPIWarnings(&resp.Diagnostics, warnings)
 	// Record the id first so a failing read-back doesn't orphan the monitor.
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), id)...)
 	api, err := r.client.GetMonitor(ctx, id)
@@ -307,10 +321,12 @@ func (r *httpMonitorResource) Update(ctx context.Context, req resource.UpdateReq
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if err := r.client.UpdateMonitor(ctx, plan.ID.ValueString(), w); err != nil {
+	warnings, err := r.client.UpdateMonitor(ctx, plan.ID.ValueString(), w)
+	if err != nil {
 		resp.Diagnostics.AddError("Error updating http monitor", err.Error())
 		return
 	}
+	addAPIWarnings(&resp.Diagnostics, warnings)
 	api, err := r.client.GetMonitor(ctx, plan.ID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError("Error reading http monitor after update", err.Error())
